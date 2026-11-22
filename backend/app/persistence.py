@@ -47,6 +47,38 @@ def append_jsonl(sub: str, filename: str, record: dict[str, Any]) -> str:
     return path
 
 
+def write_jsonl(sub: str, filename: str, records: list[dict[str, Any]]) -> str:
+    """全量覆盖写入JSONL，配合upsert_jsonl实现按业务主键幂等更新。"""
+    path = data_path(sub, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+    return path
+
+
+def upsert_jsonl(
+    sub: str,
+    filename: str,
+    record: dict[str, Any],
+    key: str,
+) -> tuple[list[dict[str, Any]], bool]:
+    """按业务主键写入/更新单条记录。返回(全量记录, 是否为更新已有行)。
+
+    同一key的重复登记只更新一次，保证补录来源后同一条采集记录不会被重复计次。
+    """
+    records = read_jsonl(sub, filename)
+    updated = False
+    for idx, existing in enumerate(records):
+        if existing.get(key) == record.get(key):
+            records[idx] = record
+            updated = True
+            break
+    if not updated:
+        records.append(record)
+    write_jsonl(sub, filename, records)
+    return records, updated
+
+
 def read_jsonl(sub: str, filename: str) -> list[dict[str, Any]]:
     path = data_path(sub, filename)
     if not os.path.exists(path):
